@@ -1,0 +1,24 @@
+{
+  "name": "adv_quest",
+  "version": "2.0.0",
+  "description": "QuestSync Cloud — High-performance Discord quest automation dispatcher",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "discord",
+    "quests",
+    "automation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "express": "^5.3.0",
+    "express-rate-limit": "^7.0.0",
+    "helmet": "^8.3.0",
+    "ws": "^8.22.0"
+  }
+}

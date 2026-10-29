@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: questsync-cloud
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MAX_CONCURRENCY
+        value: 5
+      - key: ADMIN_PASSWORD
+        generateValue: true

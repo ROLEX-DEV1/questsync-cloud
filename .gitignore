@@ -1,0 +1,8 @@
+node_modules/
+.env
+stats.json
+visitors.json
+tokens.txt
+tokens.json
+npm-debug.log*
+*.log
