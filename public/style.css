@@ -1592,30 +1592,377 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
 
-/* Responsive Adjustments */
+/* ============================================================
+   RESPONSIVE DESIGN — Mobile-First Breakpoints
+   ============================================================ */
+
+/* ── 1200px: Large Tablet / Small Desktop ─────────────────── */
 @media (max-width: 1200px) {
     .operations-layout {
         grid-template-columns: 1fr;
     }
     .sidebar-panel {
-        order: 2;
+        order: -1; /* show session + terminal above fleet on mid screens */
+    }
+    .terminal-body {
+        height: 320px;
+    }
+    .fleet-grid {
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     }
 }
 
-@media (max-width: 768px) {
-    .top-nav {
+/* ── 900px: Tablet ────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .app-shell {
+        padding: 12px 16px 32px;
+        gap: 16px;
+    }
+
+    .deck-inner {
+        padding: 20px 20px;
+    }
+
+    .deck-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
     }
+
+    .kpi-strip {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .fleet-grid {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    }
+
+    .nav-left {
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .engine-health-chip,
+    .visitors-chip {
+        font-size: 0.7rem;
+        padding: 4px 10px;
+    }
+
+    .discord-badge-kohinoor {
+        font-size: 0.72rem;
+        padding: 4px 10px;
+    }
+
+    .modal-box {
+        max-width: 95vw;
+    }
+
+    .kpi-metric {
+        font-size: 1.4rem;
+    }
+}
+
+/* ── 768px: Mobile Landscape / Small Tablet ───────────────── */
+@media (max-width: 768px) {
+    .app-shell {
+        padding: 10px 12px 28px;
+        gap: 14px;
+    }
+
+    /* Nav collapses to stacked layout */
+    .top-nav {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 14px;
+    }
+
+    .nav-left {
+        flex-wrap: wrap;
+        gap: 8px;
+        width: 100%;
+    }
+
     .nav-right {
         width: 100%;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
     }
+
+    /* Brand */
+    .brand-title {
+        font-size: 1rem;
+    }
+    .brand-subtitle {
+        font-size: 0.68rem;
+    }
+
+    /* Hide low-priority nav chips on mobile */
+    .engine-health-chip {
+        display: none;
+    }
+
+    /* Command deck */
+    .deck-inner {
+        padding: 16px 14px;
+        gap: 14px;
+    }
+
+    .deck-title-wrap h2 {
+        font-size: 1.2rem;
+    }
+
+    .deck-title-wrap p {
+        font-size: 0.82rem;
+    }
+
+    /* Dispatch input: stack vertically */
     .dispatch-input-row {
         flex-direction: column;
+        gap: 10px;
+    }
+
+    .btn-dispatch {
+        width: 100%;
+        justify-content: center;
+        padding: 13px 0;
+        font-size: 0.92rem;
+    }
+
+    /* Quick actions: wrap */
+    .deck-quick-actions {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    /* KPI grid: 2 columns */
+    .kpi-strip {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .kpi-metric {
+        font-size: 1.3rem;
+    }
+
+    /* Fleet grid: single column */
+    .fleet-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Terminal shorter on mobile */
+    .terminal-body {
+        height: 260px;
+        font-size: 0.72rem;
+    }
+
+    /* Panel header: stack */
+    .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    /* Footer */
+    .footer-content {
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
+    }
+    .footer-right {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    /* Modal */
+    .modal-overlay {
+        padding: 12px;
+        align-items: flex-end;
+    }
+    .modal-box {
+        max-width: 100%;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+    .modal-content {
+        padding: 16px;
+    }
+    .modal-bottom {
+        padding: 12px 16px;
+    }
+
+    /* History & session cards */
+    .history-body {
+        max-height: 150px;
+    }
+    .history-user {
+        max-width: 120px;
+    }
+
+    /* Console top */
+    .term-actions {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    /* Toast: full width on mobile */
+    .toast-hub {
+        bottom: 16px;
+        right: 12px;
+        left: 12px;
+    }
+    .toast {
+        font-size: 0.8rem;
     }
 }
+
+/* ── 480px: Small Mobile ──────────────────────────────────── */
+@media (max-width: 480px) {
+    .app-shell {
+        padding: 8px 10px 24px;
+        gap: 12px;
+    }
+
+    /* Brand: tighter */
+    .brand-symbol {
+        width: 32px;
+        height: 32px;
+    }
+    .brand-title {
+        font-size: 0.9rem;
+    }
+
+    /* Hide discord badge on very small screens */
+    .discord-badge-kohinoor span {
+        display: none; /* keep icon only */
+    }
+    .discord-badge-kohinoor {
+        padding: 4px 8px;
+    }
+
+    /* Visitors chip: compact */
+    .visitors-chip .visitors-divider,
+    .visitors-chip .visitors-total {
+        display: none;
+    }
+
+    /* Nav right: compact */
+    .mode-pill {
+        font-size: 0.7rem;
+        padding: 5px 10px;
+    }
+    .btn-primary-glow {
+        font-size: 0.8rem;
+        padding: 7px 12px;
+    }
+
+    /* KPI: single column on very small screens */
+    .kpi-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .kpi-metric {
+        font-size: 1.5rem;
+    }
+
+    /* Deck */
+    .deck-inner {
+        padding: 14px 12px;
+    }
+    .deck-title-wrap h2 {
+        font-size: 1.05rem;
+    }
+    .deck-title-wrap p {
+        font-size: 0.78rem;
+    }
+
+    /* Input font */
+    .input-container input {
+        font-size: 0.82rem;
+    }
+
+    /* Worker card: tighter padding */
+    .worker-card {
+        padding: 12px 12px;
+    }
+
+    /* Terminal */
+    .terminal-body {
+        height: 220px;
+        font-size: 0.7rem;
+    }
+    .console-top {
+        padding: 8px 10px;
+    }
+
+    /* Modal: full screen feel */
+    .modal-top {
+        padding: 14px 16px;
+    }
+    .modal-top h4 {
+        font-size: 0.95rem;
+    }
+
+    /* Admin pass row */
+    .admin-pass-row {
+        flex-direction: column;
+    }
+    .admin-pass-row input {
+        width: 100%;
+    }
+
+    /* Status pills: wrap */
+    .deck-status-strip {
+        gap: 6px;
+    }
+
+    /* Filter strip: wrap */
+    .filter-strip {
+        flex-wrap: wrap;
+    }
+}
+
+/* ── 360px: Very Small Mobile ─────────────────────────────── */
+@media (max-width: 360px) {
+    .brand-meta {
+        display: none; /* icon-only branding on tiny screens */
+    }
+    .top-nav {
+        padding: 10px 10px;
+    }
+    .btn-ghost {
+        font-size: 0.75rem;
+        padding: 6px 10px;
+    }
+    .kpi-card {
+        padding: 12px 14px;
+    }
+    .terminal-body {
+        height: 190px;
+    }
+}
+
+/* ── Touch: improve tap targets ───────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+    .btn-dispatch,
+    .btn-primary-glow,
+    .btn-ghost,
+    .action-link,
+    .term-btn,
+    .filter-btn,
+    .worker-btn-stop {
+        min-height: 44px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .worker-card:hover {
+        transform: none; /* disable hover lift on touch */
+    }
+    .kpi-card:hover {
+        transform: none;
+    }
+}
+
 
 /* ── Session Entry Cards (My Dispatched Accounts) ────────────────────────── */
 .session-entry {

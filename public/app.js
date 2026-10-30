@@ -5,6 +5,50 @@
 (function () {
     'use strict';
 
+    // ── Local Time Formatter ────────────────────────────────────────────────
+    // Detects the browser's locale and timezone automatically so every user
+    // sees console timestamps in *their* local time, not the server's.
+    const _userLocale   = navigator.language || navigator.languages?.[0] || 'en';
+    const _userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    // HH:MM:SS AM/PM (or 24-h depending on locale)
+    const _timeFmt = new Intl.DateTimeFormat(_userLocale, {
+        hour:   '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone: _userTimezone
+    });
+
+    // Full date + time for tooltip
+    const _tooltipFmt = new Intl.DateTimeFormat(_userLocale, {
+        year:     'numeric',
+        month:    'short',
+        day:      'numeric',
+        hour:     '2-digit',
+        minute:   '2-digit',
+        second:   '2-digit',
+        timeZoneName: 'short',
+        timeZone: _userTimezone
+    });
+
+    /**
+     * Format a log entry's time for display.
+     * Prefers rawTime (ISO 8601 UTC) so the browser converts it correctly.
+     * Falls back to the legacy pre-formatted string if rawTime is missing.
+     */
+    function formatLogTime(log) {
+        if (log.rawTime) {
+            try {
+                const d = new Date(log.rawTime);
+                if (!isNaN(d.getTime())) {
+                    return { display: _timeFmt.format(d), title: _tooltipFmt.format(d) };
+                }
+            } catch (_) {}
+        }
+        // Fallback to whatever the server pre-formatted
+        return { display: log.timestamp || '??:??:??', title: '' };
+    }
+
     // Unique persistent client identifier
     let localClientId = localStorage.getItem('questsync_client_id');
     if (!localClientId) {
@@ -351,9 +395,13 @@
             div.className = 'history-entry';
             const mins = Math.floor((entry.elapsed || 0) / 60);
             const secs = (entry.elapsed || 0) % 60;
-            const time = new Date(entry.finishedAt).toLocaleTimeString('en-US', {
-                hour: '2-digit', minute: '2-digit', hour12: true
-            });
+            let time = '—';
+            try {
+                const d = new Date(entry.finishedAt);
+                if (!isNaN(d.getTime())) {
+                    time = _timeFmt.format(d);
+                }
+            } catch (_) {}
             div.innerHTML = `
                 <div class="history-entry-left">
                     <span class="history-user">${escapeHtml(entry.username)}</span>
@@ -510,8 +558,9 @@
         const row     = document.createElement('div');
         row.className = `stream-row ${log.level || 'info'}`;
         const acct    = log.account ? `<span class="row-acct">${escapeHtml(log.account)}:</span>` : '';
+        const { display: tsDisplay, title: tsTitle } = formatLogTime(log);
         row.innerHTML = `
-            <span class="row-ts">[${escapeHtml(log.timestamp)}]</span>
+            <span class="row-ts" title="${escapeHtml(tsTitle)}">[${escapeHtml(tsDisplay)}]</span>
             <span class="row-slot">[${escapeHtml(log.slot)}]</span>
             ${acct}
             <span class="row-msg">${escapeHtml(log.message)}</span>

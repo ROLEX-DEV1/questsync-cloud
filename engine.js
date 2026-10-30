@@ -173,15 +173,15 @@ class QuestEngine extends EventEmitter {
     }
 
     log(slotTag, message, level = 'info', accountTag = '') {
-        const now     = new Date();
-        const timeStr = now.toLocaleTimeString('en-US', {
-            hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
-        });
+        const now = new Date();
 
         const logEntry = {
             id:        crypto.randomUUID(),
-            timestamp: timeStr,
+            // rawTime is an ISO 8601 UTC string — clients re-format it in
+            // their own locale/timezone so each user sees their local clock.
             rawTime:   now.toISOString(),
+            // legacy fallback: UTC time string (used if a client ignores rawTime)
+            timestamp: now.toISOString(),
             slot:      slotTag,
             account:   accountTag,
             message:   message,
@@ -489,22 +489,26 @@ class QuestEngine extends EventEmitter {
 
         let newlyEnrolled = 0;
         for (const quest of eligibleQuests) {
-            const qName = quest.config?.messages?.quest_name || quest.config?.messages?.questName || `Quest #${quest.id}`;
+            const qName = quest.config?.messages?.quest_name || quest.config?.messages?.questName || quest.name || `Quest #${quest.id}`;
             const isAlreadyEnrolled = !!(quest.user_status?.enrolled_at || quest.userStatus?.enrolledAt);
 
             if (!isAlreadyEnrolled) {
                 try {
+                    const enrollPayload = { location: 1 };
+                    const sealed = quest.traffic_metadata_sealed || quest.trafficMetadataSealed || quest.metadata_sealed;
+                    if (sealed) enrollPayload.traffic_metadata_sealed = sealed;
+
                     let enrollRes = await fetch(`https://discord.com/api/v9/quests/${quest.id}/enroll`, {
                         method: 'POST',
                         headers,
-                        body: JSON.stringify({ location: 1 }),
+                        body: JSON.stringify(enrollPayload),
                         signal: slot.controller.signal
                     });
-                    if (!enrollRes.ok) {
+                    if (!enrollRes.ok && enrollRes.status !== 401 && enrollRes.status !== 429) {
                         enrollRes = await fetch(`https://discord.com/api/v10/quests/${quest.id}/enroll`, {
                             method: 'POST',
                             headers,
-                            body: JSON.stringify({ location: 1 }),
+                            body: JSON.stringify(enrollPayload),
                             signal: slot.controller.signal
                         });
                     }
@@ -530,20 +534,40 @@ class QuestEngine extends EventEmitter {
         slot.totalQuests     = eligibleQuests.length;
         slot.completedQuests = 0;
         slot.quests          = eligibleQuests.map((q, idx) => {
-            const taskConfig = q.config?.task_config_v2 || q.config?.task_config || {};
-            const isVideo    = !!(taskConfig.tasks?.WATCH_VIDEO || taskConfig.tasks?.WATCH_VIDEO_ON_MOBILE);
-            const taskData   = isVideo
-                ? (taskConfig.tasks?.WATCH_VIDEO || taskConfig.tasks?.WATCH_VIDEO_ON_MOBILE)
-                : (taskConfig.tasks?.PLAY_ON_DESKTOP || {});
-            const appId     = taskData.applications?.[0]?.id || q.config?.application?.id || null;
+            const taskConfig = q.config?.task_config_v2 || q.config?.taskConfigV2 || q.config?.task_config || q.config?.taskConfig || {};
+            const tasks = taskConfig.tasks || {};
+            const videoKey = Object.keys(tasks).find(k => k.toUpperCase().includes('VIDEO'));
+            const isVideo = !!videoKey;
+            const taskData = isVideo
+                ? tasks[videoKey]
+                : (tasks.PLAY_ON_DESKTOP || tasks.STREAM_ON_DESKTOP || Object.values(tasks)[0] || {});
+            const appId = taskData.applications?.[0]?.id || q.config?.application?.id || null;
             const targetSec = taskData.target || (isVideo ? 142 : 900);
+
+            // Read existing progress if user already partially completed it
+            const userStatus = q.user_status || q.userStatus || {};
+            const progressObj = userStatus.progress || {};
+            let initialProgress = 0;
+            if (isVideo && videoKey && progressObj[videoKey]?.value) {
+                initialProgress = progressObj[videoKey].value;
+            } else if (progressObj.PLAY_ON_DESKTOP?.value) {
+                initialProgress = progressObj.PLAY_ON_DESKTOP.value;
+            }
+
+            const qName = q.config?.messages?.quest_name ||
+                          q.config?.messages?.questName ||
+                          q.config?.messages?.game_title ||
+                          q.config?.messages?.gameTitle ||
+                          q.name ||
+                          `Quest #${idx + 1}`;
 
             return {
                 id:            q.id,
+                videoKey:      videoKey || 'WATCH_VIDEO',
                 applicationId: appId,
-                name:          q.config?.messages?.quest_name || q.config?.messages?.questName || `Quest #${idx + 1}`,
+                name:          qName,
                 type:          isVideo ? 'VIDEO' : 'GAME',
-                progress:      0,
+                progress:      Math.min(targetSec, Math.floor(initialProgress || 0)),
                 target:        targetSec,
                 completed:     false
             };
@@ -555,6 +579,27 @@ class QuestEngine extends EventEmitter {
         await this.farmActiveQuests(slot, headers, `@${userData.username}`);
     }
 
+    async claimQuestReward(questId, headers, signal) {
+        const endpoints = [
+            `https://discord.com/api/v9/quests/${questId}/claim-reward`,
+            `https://discord.com/api/v10/quests/${questId}/claim-reward`,
+            `https://discord.com/api/v9/quests/${questId}/claim`,
+            `https://discord.com/api/v10/quests/${questId}/claim`
+        ];
+        for (const url of endpoints) {
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ location: 1 }),
+                    signal
+                });
+                if (res.ok) return true;
+            } catch (_) {}
+        }
+        return false;
+    }
+
     async farmActiveQuests(slot, headers, usernameTag) {
         while (slot.completedQuests < slot.totalQuests && slot.status === 'FARMING') {
             await this.delay(18000); // 18-second authentic cadence
@@ -563,26 +608,68 @@ class QuestEngine extends EventEmitter {
                 if (q.completed) continue;
 
                 if (q.type === 'VIDEO') {
-                    const nextTime = Math.min(q.target, q.progress + 15 + Math.random() * 2);
+                    const nextTime = Math.min(q.target, Number((q.progress + 15 + Math.random() * 2).toFixed(1)));
                     try {
-                        const res = await fetch(`https://discord.com/api/v10/quests/${q.id}/video-progress`, {
+                        let res = await fetch(`https://discord.com/api/v9/quests/${q.id}/video-progress`, {
                             method: 'POST',
                             headers,
                             body:   JSON.stringify({ timestamp: nextTime }),
                             signal: slot.controller.signal
                         });
-                        q.progress = Math.floor(nextTime);
 
-                        if (res.ok) {
-                            const data       = await res.json();
-                            const userStatus = data.user_status || data;
-                            if (userStatus.completed_at || q.progress >= q.target) {
+                        if (!res.ok && res.status !== 401 && res.status !== 429) {
+                            res = await fetch(`https://discord.com/api/v10/quests/${q.id}/video-progress`, {
+                                method: 'POST',
+                                headers,
+                                body:   JSON.stringify({ timestamp: nextTime }),
+                                signal: slot.controller.signal
+                            });
+                        }
+
+                        if (res && res.ok) {
+                            let data = {};
+                            try { data = await res.json(); } catch (_) {}
+                            const userStatus = data.user_status || data.userStatus || data;
+
+                            const progressVal = userStatus.progress?.WATCH_VIDEO?.value ??
+                                                userStatus.progress?.WATCH_VIDEO_ON_MOBILE?.value ??
+                                                userStatus.progress?.WATCH_VIDEO_DESKTOP?.value ??
+                                                (q.videoKey && userStatus.progress?.[q.videoKey]?.value);
+
+                            if (typeof progressVal === 'number' && progressVal > 0) {
+                                q.progress = Math.min(q.target, Math.floor(progressVal));
+                            } else {
+                                q.progress = Math.min(q.target, Math.floor(nextTime));
+                            }
+
+                            if (userStatus.completed_at || userStatus.completedAt || q.progress >= q.target) {
                                 q.completed = true;
+                                q.progress = q.target;
                                 slot.completedQuests++;
                                 this.log(`Slot ${slot.slotId}`, `Video quest completed: ${q.name}`, 'success', usernameTag);
-                                try {
-                                    await fetch(`https://discord.com/api/v10/quests/${q.id}/claim`, { method: 'POST', headers });
-                                } catch (_) { /* claim failure is non-fatal */ }
+                                await this.claimQuestReward(q.id, headers, slot.controller.signal);
+                            }
+                        } else if (res) {
+                            const status = res.status;
+                            let errBody = '';
+                            try { errBody = await res.text(); } catch (_) {}
+
+                            if (status === 400 && (errBody.includes('completed') || errBody.includes('already') || errBody.includes('claimed'))) {
+                                q.completed = true;
+                                q.progress = q.target;
+                                slot.completedQuests++;
+                                this.log(`Slot ${slot.slotId}`, `Video quest already completed: ${q.name}`, 'success', usernameTag);
+                                await this.claimQuestReward(q.id, headers, slot.controller.signal);
+                            } else {
+                                q.progress = Math.min(q.target, Math.floor(nextTime));
+                                if (q.progress >= q.target) {
+                                    q.completed = true;
+                                    slot.completedQuests++;
+                                    this.log(`Slot ${slot.slotId}`, `Video quest reached target: ${q.name}`, 'success', usernameTag);
+                                    await this.claimQuestReward(q.id, headers, slot.controller.signal);
+                                } else {
+                                    this.log(`Slot ${slot.slotId}`, `Video progress warn (${q.name}): HTTP ${status}`, 'warning', usernameTag);
+                                }
                             }
                         }
                     } catch (e) {
@@ -595,33 +682,61 @@ class QuestEngine extends EventEmitter {
                         const heartbeatBody = { terminal: false };
                         if (q.applicationId) heartbeatBody.application_id = q.applicationId;
 
-                        const res = await fetch(`https://discord.com/api/v10/quests/${q.id}/heartbeat`, {
+                        let res = await fetch(`https://discord.com/api/v9/quests/${q.id}/heartbeat`, {
                             method: 'POST',
                             headers,
                             body:   JSON.stringify(heartbeatBody),
                             signal: slot.controller.signal
                         });
 
+                        if (!res.ok && res.status !== 401 && res.status !== 429) {
+                            res = await fetch(`https://discord.com/api/v10/quests/${q.id}/heartbeat`, {
+                                method: 'POST',
+                                headers,
+                                body:   JSON.stringify(heartbeatBody),
+                                signal: slot.controller.signal
+                            });
+                        }
+
                         q.progress = Math.min(q.target, q.progress + 20);
 
-                        if (res.ok) {
-                            const data       = await res.json();
-                            const userStatus = data.user_status || data;
+                        if (res && res.ok) {
+                            let data = {};
+                            try { data = await res.json(); } catch (_) {}
+                            const userStatus = data.user_status || data.userStatus || data;
                             const progressVal = userStatus.progress?.PLAY_ON_DESKTOP?.value || q.progress;
                             q.progress = Math.floor(progressVal);
 
-                            if (userStatus.completed_at || q.progress >= q.target) {
+                            if (userStatus.completed_at || userStatus.completedAt || q.progress >= q.target) {
                                 q.completed = true;
+                                q.progress = q.target;
                                 slot.completedQuests++;
                                 this.log(`Slot ${slot.slotId}`, `Game quest completed: ${q.name}`, 'success', usernameTag);
                                 try {
-                                    await fetch(`https://discord.com/api/v10/quests/${q.id}/heartbeat`, {
+                                    await fetch(`https://discord.com/api/v9/quests/${q.id}/heartbeat`, {
                                         method: 'POST',
                                         headers,
                                         body: JSON.stringify({ application_id: q.applicationId, terminal: true })
                                     });
-                                    await fetch(`https://discord.com/api/v10/quests/${q.id}/claim`, { method: 'POST', headers });
-                                } catch (_) { /* terminal/claim is non-fatal */ }
+                                } catch (_) { /* terminal is non-fatal */ }
+                                await this.claimQuestReward(q.id, headers, slot.controller.signal);
+                            }
+                        } else if (res) {
+                            const status = res.status;
+                            let errBody = '';
+                            try { errBody = await res.text(); } catch (_) {}
+
+                            if (status === 400 && (errBody.includes('completed') || errBody.includes('already') || errBody.includes('claimed'))) {
+                                q.completed = true;
+                                q.progress = q.target;
+                                slot.completedQuests++;
+                                this.log(`Slot ${slot.slotId}`, `Game quest already completed: ${q.name}`, 'success', usernameTag);
+                                await this.claimQuestReward(q.id, headers, slot.controller.signal);
+                            } else if (q.progress >= q.target) {
+                                q.completed = true;
+                                slot.completedQuests++;
+                                this.log(`Slot ${slot.slotId}`, `Game quest reached target: ${q.name}`, 'success', usernameTag);
+                                await this.claimQuestReward(q.id, headers, slot.controller.signal);
                             }
                         }
                     } catch (e) {
